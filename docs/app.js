@@ -120,8 +120,8 @@ function reviewScan(form,collectOnly=false){draft=form;let match;try{match=C.res
 }
 function manual(){
  const a=getA();
- const options=a.items.map(i=>'<option value="'+esc(i.id)+'">'+[i.nf,'NFD '+(i.nfd||'—'),i.sku,i.client].map(esc).join(' · ')+'</option>').join('');
- const body='<label class="field">NF venda / NFD / material<select id="manual-item">'+options+'</select></label>'+
+ const body=field('Buscar por NF','manual-nf','Digite a NF de venda ou a NFD')+
+  '<label class="field">NF venda / NFD / material<select id="manual-item" required></select></label>'+
   field('Quantidade recebida','manual-qty','','1','number','min="1" step="1" required')+
   field('Lote indústria','manual-lot','Obrigatório para todos os volumes')+
   '<label class="field">Seriais por volume (opcional)<textarea id="manual-lines" placeholder="Um volume por linha. Use serial;adicional"></textarea></label>'+
@@ -130,6 +130,7 @@ function manual(){
  showModal('Lançamento manual',body,async()=>{
   const qty=Number($('#manual-qty').value);
   const item=a.items.find(i=>i.id===$('#manual-item').value);
+  if(!item)throw Error('Selecione o material da nota.');
   const lines=$('#manual-lines').value.trim().split(/\r?\n/);
   if(!Number.isSafeInteger(qty)||qty<1||qty>item.qty)throw Error('Confira a quantidade e o saldo do item.');
   if(lines.length>qty)throw Error('Há mais linhas de seriais do que volumes.');
@@ -143,7 +144,33 @@ function manual(){
    }return last;
   });
   render();toast(qty+' volume(s) registrado(s).');
- },'Confirmar recebimento');
+ },'Confirmar recebimento',()=>{
+  const filter=$('#manual-nf'), select=$('#manual-item');
+  function updateOptions(){
+   const query=filter.value.trim().toUpperCase();
+   const matches=a.items.filter(item=>[item.nf,item.nfd].some(code=>String(code||'').toUpperCase().includes(query)));
+   select.replaceChildren();
+   if(!matches.length || (query && matches.length>1)){
+    select.add(new Option(matches.length?'Selecione um material ('+matches.length+' itens)':'Nenhuma nota encontrada',''));
+   }
+   for(const item of matches){
+    const label=[item.nf,'NFD '+(item.nfd||'—'),item.sku,item.client].join(' · ');
+    select.add(new Option(label,item.id));
+   }
+   $('#modal-confirm').disabled=!select.value;
+  }
+  filter.oninput=updateOptions;
+  select.onchange=()=>{ $('#modal-confirm').disabled=!select.value; };
+  filter.onkeydown=event=>{
+   if(event.key==='Enter'){
+    event.preventDefault();
+    if(select.value)$('#manual-qty').focus();
+    else select.focus();
+   }
+  };
+  updateOptions();
+  filter.focus();
+ });
 }
 function occurrenceModal(){const a=getA();showModal('Registrar falta ou avaria',`<label class="field">NF / material<select id="occ-item">${a.items.map(i=>`<option value="${i.id}">${esc(i.nf)} / NFD ${esc(i.nfd||'—')} • ${esc(i.sku)} • ${esc(i.client)}</option>`).join('')}</select></label><div class="formgrid"><label class="field">Tipo<select id="occ-type"><option>FALTA</option><option>AVARIA</option></select></label>${field('Quantidade','occ-qty','',1,'number','min="1" step="1"')}</div>${field('Observação','occ-note','Descreva a ocorrência')}<p class="infotext">O registro documenta a ocorrência. Não lança recebimento nem altera o saldo.</p>`,async()=>{await mutate(s=>C.occurrence(s,activeId,$('#occ-item').value,$('#occ-type').value,Number($('#occ-qty').value),person,$('#occ-note').value));render();toast('Ocorrência registrada.');});}
 function download(data,name,type){const u=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);}
